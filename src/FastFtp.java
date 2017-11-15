@@ -55,6 +55,9 @@ public class FastFtp {
      */
 	public void send(String serverName, int serverPort, String fileName) {
 		try {
+			//Open random udpSocket
+			udpSoc=new DatagramSocket(8888);
+			
 			//Establish TCP connection
 			Socket soc=new Socket(serverName, serverPort);
 			File sFile=new File(fileName);
@@ -68,43 +71,53 @@ public class FastFtp {
 			out.writeLong(fileSize);	//Length of file sent
 			
 			//Arbitrary?
-			out.writeInt(9564);				//Local UDP port number
+			out.writeInt(udpSoc.getLocalPort());				//Local UDP port number
 			out.flush();
 			
 			int udpPort=in.readInt();
+			System.out.println(udpPort);
+
+			udpSoc.connect(soc.getInetAddress(), udpPort);
 			
-			udpSoc=new DatagramSocket(udpPort);
+			
+			System.out.println(sFile.length() + " IS THE LENGTH");
 			
 			ReceiverThread listener=new ReceiverThread(this, udpSoc);
-			
+			listener.start();
 			FileInputStream fInStream=new FileInputStream(sFile);
 			ti=new Timer();
-
+			
 			int nextSeg=0;
 			long bytesLeft=fileSize;
 			
 			while (bytesLeft != 0) {
-				int length;
 				byte[] bArray;
 				if (bytesLeft < 1000) {
 					bArray=new byte[(int) bytesLeft];
-					length=(int) bytesLeft;
 				} else {
 					bArray=new byte[1000];
-					length=1000;
 				}
 				
 				bytesLeft-=fInStream.read(bArray);
 				
 				Segment sPacket=new Segment(nextSeg, bArray);
 				while (window.isFull()){
+					Thread.yield();
 					//Do a yield here later on
 				}
 				processSend(sPacket);
 				
 			}
 			
+			fInStream.close();
+			while (!window.isEmpty()) {
+				Thread.yield();
+			}
 			
+			ti.cancel();
+			listener.interrupt();
+			soc.close();
+			udpSoc.close();
 		} catch (IOException e) {
 			
 			e.printStackTrace();
@@ -119,7 +132,7 @@ public class FastFtp {
 			if (seg.getSeqNum()==window.element().getSeqNum()){
 				//Cancel Previous Timer and Start new timer
 				ti.cancel();
-				ti.schedule(new TimeOuter(), timeout);				
+				ti.schedule(new TimeOuter(this), timeout);				
 			}
 		} catch (InterruptedException | IOException e) {
 			System.out.println("Error occured in sending");
@@ -137,17 +150,29 @@ public class FastFtp {
 				try {
 					if (ackNum==window.remove().getSeqNum()) {
 						received=false;
-					}
-					
+					}					
 				} catch (InterruptedException e) {
 					System.out.println("Thread interrupted");
 				}
+			}
+			if (!window.isEmpty()) {
+				ti.schedule(new TimeOuter(this), timeout);
 			}
 		}
 	}
 	
 	public synchronized void processTimeout() {
-		
+		for (Segment cSeg:window.toArray()) {
+			try {
+				udpSoc.send(new DatagramPacket(cSeg.getBytes(), cSeg.getLength()));
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+		}
+		if (!window.isEmpty()) {
+			ti.schedule(new TimeOuter(this), timeout);
+		}
 	}
 	
     /**
