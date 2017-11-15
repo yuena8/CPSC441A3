@@ -28,6 +28,7 @@ public class FastFtp {
 	TxQueue window;
 	DatagramSocket udpSoc;
 	Timer ti;
+	boolean timerSet=false;
 	/**
      * Constructor to initialize the program 
      * 
@@ -74,11 +75,16 @@ public class FastFtp {
 			out.writeInt(udpSoc.getLocalPort());				//Local UDP port number
 			out.flush();
 			
-			int udpPort=in.readInt();
-			System.out.println(udpPort);
+			int serverUdpPort=in.readInt();
+			System.out.println(serverUdpPort);
 
-			udpSoc.connect(soc.getInetAddress(), udpPort);
+			udpSoc.connect(soc.getInetAddress(), serverUdpPort);
 			
+			
+			//System.out.println("udp local prot = " + udpSoc.getLocalPort());
+			
+			//long cTime=System.currentTimeMillis();
+			//while (cTime+5000 > System.currentTimeMillis()) {}
 			
 			System.out.println(sFile.length() + " IS THE LENGTH");
 			
@@ -101,38 +107,53 @@ public class FastFtp {
 				bytesLeft-=fInStream.read(bArray);
 				
 				Segment sPacket=new Segment(nextSeg, bArray);
+				nextSeg++;
 				while (window.isFull()){
+					System.out.println("Window is full");
+					for (Segment seg:window.toArray()) {
+						System.out.println(seg.getSeqNum() + " Seg in window needs to be acked still");
+						System.out.println("Is timer set ? " + timerSet);
+					}
+					//
+					long cTime=System.currentTimeMillis();
+					//while (cTime+1000 > System.currentTimeMillis()) {}
 					Thread.yield();
 					//Do a yield here later on
 				}
 				processSend(sPacket);
-				
 			}
 			
 			fInStream.close();
 			while (!window.isEmpty()) {
+				System.out.println("Window is not emptied");
 				Thread.yield();
 			}
-			
-			ti.cancel();
+			if (timerSet) {
+				ti.cancel();
+				timerSet=false;
+			}
 			listener.interrupt();
 			soc.close();
 			udpSoc.close();
 		} catch (IOException e) {
 			
 			e.printStackTrace();
-		} 
+		}
 		
 	}
 	
 	public synchronized void processSend(Segment seg) {
 		try {
-			udpSoc.send(new DatagramPacket(seg.getBytes(), seg.getLength()));
+			System.out.println("Sending Seg " + seg.getSeqNum() + " (processSend)");
+			
+			udpSoc.send(new DatagramPacket(seg.getBytes(), seg.getLength()+4));
 			window.add(seg);
 			if (seg.getSeqNum()==window.element().getSeqNum()){
 				//Cancel Previous Timer and Start new timer
-				ti.cancel();
-				ti.schedule(new TimeOuter(this), timeout);				
+				
+				startNewTimer();
+				System.out.println("timer set : " + timerSet);
+				
 			}
 		} catch (InterruptedException | IOException e) {
 			System.out.println("Error occured in sending");
@@ -144,36 +165,58 @@ public class FastFtp {
 		if (ackNum>window.element().getSeqNum()+winSize || ackNum<window.element().getSeqNum()) {
 			//ignored cases
 		} else {
-			ti.cancel();
+			if (timerSet) {
+				ti.cancel();
+				timerSet=false;
+			}
 			boolean received=true;
 			while (received) {
 				try {
-					if (ackNum==window.remove().getSeqNum()) {
+					Segment rSeg=window.element();
+					if (rSeg==null) {
+						//Do nothing
+					} else if (rSeg.getSeqNum() < ackNum) {
+						//window.remove();
+						System.out.println(window.remove().getSeqNum() + " segment num removed");
+					} else if (rSeg.getSeqNum() == ackNum) {
 						received=false;
-					}					
+					}
 				} catch (InterruptedException e) {
 					System.out.println("Thread interrupted");
 				}
 			}
+			
 			if (!window.isEmpty()) {
-				ti.schedule(new TimeOuter(this), timeout);
+				System.out.println("Setting new timer (processACK)");
+				startNewTimer();
 			}
 		}
 	}
 	
 	public synchronized void processTimeout() {
+		System.out.println("Time out reached resending packets!!!!!!");
 		for (Segment cSeg:window.toArray()) {
 			try {
-				udpSoc.send(new DatagramPacket(cSeg.getBytes(), cSeg.getLength()));
+				udpSoc.send(new DatagramPacket(cSeg.getBytes(), cSeg.getLength()+4));
 			} catch (IOException e) {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
 			}
 		}
 		if (!window.isEmpty()) {
-			ti.schedule(new TimeOuter(this), timeout);
+			startNewTimer();
 		}
 	}
+	
+	private void startNewTimer() {
+		if (timerSet) {
+			ti.cancel();
+		}
+		ti=new Timer();
+		ti.schedule(new TimeOuter(this), timeout);
+		timerSet=true;		
+	}
+	
 	
     /**
      * A simple test driver

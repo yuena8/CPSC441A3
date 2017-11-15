@@ -22,6 +22,8 @@ public class ReceiverThread extends Thread {
 					
 					uConnection.receive(packet);
 					Segment ack=new Segment(packet);
+					System.out.println( "ACK received: " +ack.getSeqNum());
+					
 					master.processACK(ack);
 					
 				}
