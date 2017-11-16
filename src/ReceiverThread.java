@@ -19,17 +19,22 @@ public class ReceiverThread extends Thread {
 			DatagramPacket packet=new DatagramPacket(buffer, buffer.length);
 			try {
 				while (!Thread.interrupted()) {
-					
 					uConnection.receive(packet);
 					Segment ack=new Segment(packet);
-					System.out.println( "ACK received: " +ack.getSeqNum());
-					
 					master.processACK(ack);
-					
 				}
+				System.out.println("Receiver ended");
 			} catch (IOException e) {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
 			}
 	}
+	
+	public void interrupt() {
+		System.out.println("Interrupted Receiver");
+		super.interrupt();
+		uConnection.close();
+		
+	}
+	
 }

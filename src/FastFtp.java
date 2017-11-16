@@ -28,6 +28,7 @@ public class FastFtp {
 	TxQueue window;
 	DatagramSocket udpSoc;
 	Timer ti;
+	int nextSeg;
 	boolean timerSet=false;
 	/**
      * Constructor to initialize the program 
@@ -86,14 +87,12 @@ public class FastFtp {
 			//long cTime=System.currentTimeMillis();
 			//while (cTime+5000 > System.currentTimeMillis()) {}
 			
-			System.out.println(sFile.length() + " IS THE LENGTH");
-			
 			ReceiverThread listener=new ReceiverThread(this, udpSoc);
 			listener.start();
 			FileInputStream fInStream=new FileInputStream(sFile);
 			ti=new Timer();
 			
-			int nextSeg=0;
+			nextSeg=0;
 			long bytesLeft=fileSize;
 			
 			while (bytesLeft != 0) {
@@ -109,34 +108,26 @@ public class FastFtp {
 				Segment sPacket=new Segment(nextSeg, bArray);
 				nextSeg++;
 				while (window.isFull()){
-					System.out.println("Window is full");
-					for (Segment seg:window.toArray()) {
-						System.out.println(seg.getSeqNum() + " Seg in window needs to be acked still");
-						System.out.println("Is timer set ? " + timerSet);
-					}
-					//
-					long cTime=System.currentTimeMillis();
-					//while (cTime+1000 > System.currentTimeMillis()) {}
 					Thread.yield();
-					//Do a yield here later on
 				}
 				processSend(sPacket);
 			}
 			
 			fInStream.close();
 			while (!window.isEmpty()) {
-				System.out.println("Window is not emptied");
+				//System.out.println("Window is not emptied");
 				Thread.yield();
 			}
 			if (timerSet) {
+				
 				ti.cancel();
+				ti.purge();
 				timerSet=false;
 			}
+			udpSoc.close();
 			listener.interrupt();
 			soc.close();
-			udpSoc.close();
 		} catch (IOException e) {
-			
 			e.printStackTrace();
 		}
 		
@@ -144,16 +135,13 @@ public class FastFtp {
 	
 	public synchronized void processSend(Segment seg) {
 		try {
-			System.out.println("Sending Seg " + seg.getSeqNum() + " (processSend)");
+			System.out.println("Sending Seg:\t" + seg.getSeqNum() + "\t(processSend)");
 			
 			udpSoc.send(new DatagramPacket(seg.getBytes(), seg.getLength()+4));
 			window.add(seg);
 			if (seg.getSeqNum()==window.element().getSeqNum()){
 				//Cancel Previous Timer and Start new timer
-				
 				startNewTimer();
-				System.out.println("timer set : " + timerSet);
-				
 			}
 		} catch (InterruptedException | IOException e) {
 			System.out.println("Error occured in sending");
@@ -162,11 +150,13 @@ public class FastFtp {
 	
 	public synchronized void processACK(Segment ack) {
 		int ackNum=ack.getSeqNum();
+		System.out.println("Received ACK:\t" + ackNum + "\t(processACK)");
 		if (ackNum>window.element().getSeqNum()+winSize || ackNum<window.element().getSeqNum()) {
 			//ignored cases
 		} else {
 			if (timerSet) {
 				ti.cancel();
+				ti.purge();
 				timerSet=false;
 			}
 			boolean received=true;
@@ -176,8 +166,7 @@ public class FastFtp {
 					if (rSeg==null) {
 						//Do nothing
 					} else if (rSeg.getSeqNum() < ackNum) {
-						//window.remove();
-						System.out.println(window.remove().getSeqNum() + " segment num removed");
+						window.remove();
 					} else if (rSeg.getSeqNum() == ackNum) {
 						received=false;
 					}
@@ -187,14 +176,13 @@ public class FastFtp {
 			}
 			
 			if (!window.isEmpty()) {
-				System.out.println("Setting new timer (processACK)");
 				startNewTimer();
 			}
 		}
 	}
 	
 	public synchronized void processTimeout() {
-		System.out.println("Time out reached resending packets!!!!!!");
+		System.out.println("TIME OUT - Resending all window segments.");
 		for (Segment cSeg:window.toArray()) {
 			try {
 				udpSoc.send(new DatagramPacket(cSeg.getBytes(), cSeg.getLength()+4));
@@ -203,6 +191,7 @@ public class FastFtp {
 				e.printStackTrace();
 			}
 		}
+		
 		if (!window.isEmpty()) {
 			startNewTimer();
 		}
@@ -211,6 +200,7 @@ public class FastFtp {
 	private void startNewTimer() {
 		if (timerSet) {
 			ti.cancel();
+			ti.purge();
 		}
 		ti=new Timer();
 		ti.schedule(new TimeOuter(this), timeout);
