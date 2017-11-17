@@ -8,9 +8,8 @@ public class TimeOuter extends TimerTask {
 	}
 	
 	public void run() {
-		
 		master.processTimeout();
-	
+		this.cancel();
 	}
 
 }

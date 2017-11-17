@@ -1,0 +1,119 @@
+CREATE DATABASE truckco;
+
+CREATE TABLE Company (
+username varchar(15) NOT NULL,
+password varchar(15) NOT NULL,
+name varchar(31),
+banking_info varchar(255) NOT NULL,
+PRIMARY KEY (username)
+);
+
+CREATE TABLE Location (
+owner_username varchar(15) NOT NULL,
+contact_name varchar(31) NOT NULL,
+contact_number varchar(15),
+province varchar(31),
+city varchar(31),
+street varchar(31),
+postal_code varchar(15),
+CONTRAINT PK_Location PRIMARY KEY(owner_username, contact_name),
+FOREIGN KEY owner_username REFERENCES Company(username)
+);
+
+CREATE TABLE Payload (
+ID int NOT NULL,
+manifest varchar(255),
+asset_value int,
+gross_weight int,
+banking_info varchar(255),
+contact_name varchar(31),
+contact_# varchar(15),
+PRIMARY KEY (ID)
+)
+
+CREATE TABLE Workorder )
+worker_order# int NOT NULL,
+start_time smalldatetime(),
+deadline smalldatetime(),
+dropoff_loc varchar(127),
+pickup_loc varchar(127),
+contract_price int,
+status varchar(15),
+contractor_ID int,
+PRIMARY KEY (work_order#)
+)
+
+CREATE TABLE Posts (
+payload_ID int NOT NULL,
+Work_order# int NOT NULL,
+post_username varchar(15) NOT NULL,
+CONSTRAINT PK_Posts PRIMARY KEY (payload_ID, Work_order#),
+FOREIGN KEY payload_ID REFERENCES Payload(ID),
+FOREIGN KEY Work_order# REFERENCES Workorder(Work_order#),
+FOREIGN KEY post_username REFERENCES Company(username)
+)
+
+CREATE TABLE Policy_Requirements (
+payload_ID int NOT NULL,
+start_time smalldatetime() NOT NULL,
+end_time smalldatetime(),
+tal/lead_car varchar(255),
+CONSTRAINT PK_Policy_Requirements PRIMARY KEY (payload_ID, start_time),
+FOREIGN KEY payload_ID REFERENCES Payload(ID)
+)
+
+CREATE TABLE Jurisdictions_Table (
+jurisdictions varchar(31) NOT NULL,
+payload_ID int NOT NULL,
+start_time smalldatetime() NOT NULL,
+FOREIGN KEY FK_Policy_Jurisdictions REFERENCES Policy_Requirements(payload_ID, start_time)
+)
+
+CREATE TABLE Contractor (
+contractor_ID int NOT NULL,
+banking_info varchar(255),
+PRIMARY KEY (contractor_ID)
+)
+
+CREATE TABLE Independant_Driver (
+driver_username varchar(15) NOT NULL,
+WCB_# varchar(63),
+password varchar(15) NOT NULL,
+drivers_license varchar(31),
+contractor_ID int NOT NULL,
+PRIMARY KEY (driver_username),
+FOREIGN KEY contractor_ID REFERENCES Contractor(contractor_ID)
+)
+
+CREATE TABLE Contract_Employer (
+c_username varchar(15) NOT NULL,
+business_ID int NOT NULL,
+password varchar(15) NOT NULL,
+contractor_ID int NOT NULL,
+PRIMARY KEY (c_username),
+FOREIGN KEY contractor_ID REFERENCES Contractor(contractor_ID)
+)
+
+CREATE TABLE Views (
+Work_order# int NOT NULL,
+contractor_ID int NOT NULL,
+CONSTRAINT PK_Views PRIMARY KEY (Work_order#, contractor_ID),
+FOREIGN KEY Work_order# REFERENCES Workorder(Work_order#),
+FOREIGN KEY contractor_ID REFERENCES Contractor(contractor_ID)
+)
+
+CREATE TABLE Truck (
+registration int NOT NULL,
+inspection_certification varchar(63),
+insurance varchar(63),
+axel_size varchar(15),
+contractor_ID int NOT NULL,
+PRIMARY KEY (registration),
+FOREIGN KEY contractor_ID REFERENCES Contractor(contractor_ID)
+)
+
+CREATE TABLE Trailers (
+trailers varchar(31) NOT NULL,
+registratration int NOT NULL,
+FOREIGN KEY registration REFERENCES Truck(registration)
+)

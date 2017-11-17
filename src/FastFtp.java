@@ -3,13 +3,12 @@ import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
+
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
-import java.net.InetAddress;
+
 import java.net.Socket;
-import java.net.SocketException;
+
 import java.util.Timer;
 
 import cpsc441.a3.shared.Segment;
@@ -28,8 +27,8 @@ public class FastFtp {
 	TxQueue window;
 	DatagramSocket udpSoc;
 	Timer ti;
+	TimeOuter tOuter;
 	int nextSeg;
-	boolean timerSet=false;
 	/**
      * Constructor to initialize the program 
      * 
@@ -90,8 +89,7 @@ public class FastFtp {
 			ReceiverThread listener=new ReceiverThread(this, udpSoc);
 			listener.start();
 			FileInputStream fInStream=new FileInputStream(sFile);
-			ti=new Timer();
-			
+			ti=new Timer(true);
 			nextSeg=0;
 			long bytesLeft=fileSize;
 			
@@ -118,14 +116,15 @@ public class FastFtp {
 				//System.out.println("Window is not emptied");
 				Thread.yield();
 			}
-			if (timerSet) {
-				
-				ti.cancel();
-				ti.purge();
-				timerSet=false;
-			}
-			udpSoc.close();
+		
+			tOuter.cancel();
+			ti.purge();
+			ti.cancel();
+			
+			
 			listener.interrupt();
+			//listener.join();
+			udpSoc.close();
 			soc.close();
 		} catch (IOException e) {
 			e.printStackTrace();
@@ -139,8 +138,8 @@ public class FastFtp {
 			
 			udpSoc.send(new DatagramPacket(seg.getBytes(), seg.getLength()+4));
 			window.add(seg);
-			if (seg.getSeqNum()==window.element().getSeqNum()){
-				//Cancel Previous Timer and Start new timer
+			if (window.size()==1){
+				//Start a new timer here
 				startNewTimer();
 			}
 		} catch (InterruptedException | IOException e) {
@@ -151,20 +150,19 @@ public class FastFtp {
 	public synchronized void processACK(Segment ack) {
 		int ackNum=ack.getSeqNum();
 		System.out.println("Received ACK:\t" + ackNum + "\t(processACK)");
-		if (ackNum>window.element().getSeqNum()+winSize || ackNum<window.element().getSeqNum()) {
-			//ignored cases
+		Segment firstSegmentInWindow=window.element();
+		if (firstSegmentInWindow==null) {
+			//Do nothing
+		} else if (ackNum>(firstSegmentInWindow.getSeqNum()+winSize) || ackNum<firstSegmentInWindow.getSeqNum()) {
+			//Do nothing again
 		} else {
-			if (timerSet) {
-				ti.cancel();
-				ti.purge();
-				timerSet=false;
-			}
+			tOuter.cancel();
 			boolean received=true;
 			while (received) {
 				try {
 					Segment rSeg=window.element();
 					if (rSeg==null) {
-						//Do nothing
+						break;
 					} else if (rSeg.getSeqNum() < ackNum) {
 						window.remove();
 					} else if (rSeg.getSeqNum() == ackNum) {
@@ -174,13 +172,12 @@ public class FastFtp {
 					System.out.println("Thread interrupted");
 				}
 			}
-			
-			if (!window.isEmpty()) {
-				startNewTimer();
-			}
+		}	
+		if (!window.isEmpty()) {
+			startNewTimer();
 		}
 	}
-	
+		
 	public synchronized void processTimeout() {
 		System.out.println("TIME OUT - Resending all window segments.");
 		for (Segment cSeg:window.toArray()) {
@@ -198,13 +195,8 @@ public class FastFtp {
 	}
 	
 	private void startNewTimer() {
-		if (timerSet) {
-			ti.cancel();
-			ti.purge();
-		}
-		ti=new Timer();
-		ti.schedule(new TimeOuter(this), timeout);
-		timerSet=true;		
+		tOuter=new TimeOuter(this);
+		ti.schedule(tOuter, timeout);
 	}
 	
 	

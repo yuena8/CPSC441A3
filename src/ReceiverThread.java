@@ -7,34 +7,33 @@ import cpsc441.a3.shared.Segment;
 public class ReceiverThread extends Thread {
 	DatagramSocket uConnection;
 	FastFtp master;
-	
+	volatile boolean stop;
+	int lastSeg;
 	public ReceiverThread(FastFtp owner,DatagramSocket udp) {
 		uConnection=udp;
 		master=owner;
+		stop=false;
 	}
 	
 	
 	public void run() {
-			byte[] buffer=new byte[1000];
-			DatagramPacket packet=new DatagramPacket(buffer, buffer.length);
 			try {
-				while (!Thread.interrupted()) {
+				while (!this.isInterrupted() && !stop) {
+					byte[] buffer=new byte[1000];
+					DatagramPacket packet=new DatagramPacket(buffer, buffer.length);
 					uConnection.receive(packet);
-					Segment ack=new Segment(packet);
-					master.processACK(ack);
+					master.processACK(new Segment(packet));
 				}
 				System.out.println("Receiver ended");
 			} catch (IOException e) {
 				// TODO Auto-generated catch block
-				e.printStackTrace();
+				//e.printStackTrace();
 			}
 	}
 	
 	public void interrupt() {
 		System.out.println("Interrupted Receiver");
-		super.interrupt();
-		uConnection.close();
-		
+		stop=true;
 	}
 	
 }
